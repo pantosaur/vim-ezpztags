@@ -143,6 +143,9 @@ let s:include_table = []
 "=================================================
 " MAIN function
 function! GenerateIncludes()
+  	" get new cwd when command is run
+	let s:cwd = getcwd() . "/"
+
 	" put include paths to table for efficient looping when parsing
 	let s:include_table = split(g:include_paths, ",")
 
