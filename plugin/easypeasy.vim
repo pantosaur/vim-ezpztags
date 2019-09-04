@@ -113,10 +113,11 @@ let g:easypeasy = 1
 "===============================================================================
 " GLOBALS
 "===============================================================================
+let g:lvimrc_filename = ".lvimrc"
+let g:local_tag_filename = "tags"
+let g:include_paths = "/usr/include/,/usr/local/include/"
 let g:tag_directory = "~/.vim/tags/"
 let g:tag_extension = ".tags"
-let g:lvimrc_filename = ".lvimrc"
-let g:include_paths = "/usr/include/,/usr/local/include/"
 
 " 0 = show prompts
 " 1 = generate tags w/o prompt
@@ -142,9 +143,34 @@ let s:include_table = []
 
 "=================================================
 " MAIN function
-function! GenerateIncludes()
+function! EzPz()
   	" get new cwd when command is run
 	let s:cwd = getcwd() . "/"
+
+	" remove the .lvimrc file if it exists in cwd
+	if filereadable(s:cwd . g:lvimrc_filename)
+		if delete(s:cwd . g:lvimrc_filename) != 0
+			echoerr "Can't overwrite existing " . g:lvimrc_filename . ". "
+			echoerr "Check your permissions.\n"
+			finish
+		endif
+	endif
+
+	call writefile(["let project_dir=\"" . s:cwd . "\"", ""], s:cwd . g:lvimrc_filename)
+
+	" generate local tag file
+	call s:GenerateTags(s:cwd, s:cwd . g:local_tag_filename)
+
+	" add local tag file to tags in lvimrc
+	call writefile(["let &tags = &tags . \",\" . project_dir . \"" . g:local_tag_filename . "\""], s:cwd . g:lvimrc_filename, 'a')
+	
+	" add global tag files to tags in lvimrc
+	call writefile(GenerateIncludes(), s:cwd . g:lvimrc_filename, 'a')
+
+	echo "EzPz: DONE!"
+endfunction
+
+function! GenerateIncludes()
 
 	" put include paths to table for efficient looping when parsing
 	let s:include_table = split(g:include_paths, ",")
@@ -174,20 +200,15 @@ function! GenerateIncludes()
 		call generator.parse(line)
 	endfor
 
-	" remove the .lvimrc file if it exists in cwd
-	if filereadable(s:cwd . g:lvimrc_filename)
-		if delete(s:cwd . g:lvimrc_filename) != 0
-			echoerr "Can't overwrite existing " . g:lvimrc_filename . ". "
-			echoerr "Check your permissions.\n"
-			finish
-		endif
-	endif
-
-	" and finally do what this script is all about - create .lvimrc with tags
-	call writefile(generator.lib_tags, s:cwd . g:lvimrc_filename)
-
-	" and finish with a message
-	echo "EasyPeasy: DONE!"
+	return generator.lib_tags
+endfunction
+"=================================================
+" Function: generate the tag files from lib headers
+" Args: path - path to the library
+function! s:Generate_tags(lib_path, tag_path)
+	let s:cmd = "ctags -f ". fnamemodify(a:tag_path, ":p") ." -R --c++-kinds=+p --fields=+iaS --extra=+q " . fnamemodify(a:lib_path, ":p")
+	echo s:cmd
+	echo system(s:cmd)
 endfunction
 
 "===============================================================================
@@ -324,7 +345,7 @@ function! s:Generator.parse(line)
 		" package exist. generate tags?
 		if s:lib_exist == 1
 			if self.prompt_create_tag(s:lib_tag, s:actual_lib_path) == 1
-				call self.generate_tags(s:actual_lib_path, s:lib_tag)
+				call s:Generate_tags(s:actual_lib_path, s:lib_tag)
 			else
 				return
 			endif
@@ -332,7 +353,7 @@ function! s:Generator.parse(line)
 		else
 			let s:answer = self.prompt_lib_path(s:lib)
 			if ! empty(s:answer)
-				call self.generate_tags(s:answer, s:lib_tag)
+				call s:Generate_tags(s:answer, s:lib_tag)
 			else
 				call add(self.ignore_tags, s:lib)
 				return
@@ -395,14 +416,6 @@ function! s:Generator.prompt_lib_path(lib_name)
 	endif
 endfunction
 
-"=================================================
-" Function: generate the tag files from lib headers
-" Args: path - path to the library
-function! s:Generator.generate_tags(lib_path, tag_path)
-	let s:cmd = "ctags -f ". fnamemodify(a:tag_path, ":p") ." -R --c++-kinds=+p --fields=+iaS --extra=+q " . fnamemodify(a:lib_path, ":p")
-	echo s:cmd
-	echo system(s:cmd)
-endfunction
 "===============================================================================
 " END OF CLASS: Generator
 "===============================================================================
@@ -413,7 +426,7 @@ endfunction
 " CONFIGS
 "===============================================================================
 " declare command :EasyPeasy to generate the file
-command! -n=0 EasyPeasy call GenerateIncludes()
+command! -n=0 EzPz call EzPz()
 "===============================================================================
 " END OF CONFIGS
 "===============================================================================
