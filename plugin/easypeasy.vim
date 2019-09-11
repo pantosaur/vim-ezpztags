@@ -98,11 +98,11 @@
 " GUARD
 "===============================================================================
 if v:version < 700
-	finish
+  finish
 endif
 
 if exists('easypeasy')
-	finish
+  finish
 endif
 
 let g:easypeasy = 1
@@ -135,6 +135,11 @@ let s:file_patterns =	{ "c" : '.c$' }
 let s:search_patterns =	{ "c" : '\s*#include\s*<' }
 let s:crop_patterns =	{ "c" : '.*<\(.*\)>.*' }
 
+let s:lvimrc_section_header = { "header" : "\" Section: EzPz", "comment" : "\" **Auto-generated. Do not change or delete section header.", "footer" : "\" End: EzPz"}
+let s:lvimrc_pattern = "^\"\s\+.*:\s\+EzPz$"
+
+"     example:     EzPz
+
 let s:cwd = getcwd() . "/"
 let s:include_table = []
 "===============================================================================
@@ -144,71 +149,69 @@ let s:include_table = []
 "=================================================
 " MAIN function
 function! EzPz()
-  	" get new cwd when command is run
-	let s:cwd = getcwd() . "/"
+  " get new cwd when command is run
+  let s:cwd = getcwd() . "/"
+  let lvimrc = s:cwd . g:lvimrc_filename
+  " remove the .lvimrc file if it exists in cwd
+  let lvimrcmanager = call s:LvimrcManager.New(lvimrc)
 
-	" remove the .lvimrc file if it exists in cwd
-	if filereadable(s:cwd . g:lvimrc_filename)
-		if delete(s:cwd . g:lvimrc_filename) != 0
-			echoerr "Can't overwrite existing " . g:lvimrc_filename . ". "
-			echoerr "Check your permissions.\n"
-			finish
-		endif
-	endif
+  call lvimrcmanager.AddLines([s:lvimrc_section_header["header"], s:lvimrc_section_header["comment"]])
+  call lvimrcmanager.AddLines(["let project_dir=\"" . s:cwd . "\"", ""])
 
-	call writefile(["let project_dir=\"" . s:cwd . "\"", ""], s:cwd . g:lvimrc_filename)
+  " generate local tag file
+  call s:Generate_tags(s:cwd, s:cwd . g:local_tag_filename)
 
-	" generate local tag file
-	call s:GenerateTags(s:cwd, s:cwd . g:local_tag_filename)
+  " add local tag file to tags in lvimrc
+  call writefile(["let &tags = &tags . \",\" . project_dir . \"" . g:local_tag_filename . "\""], lvimrc, 'a')
+  call lvimrcmanager.AddLines(["let &tags = &tags . \",\" . project_dir . \"" . g:local_tag_filename . "\""])
 
-	" add local tag file to tags in lvimrc
-	call writefile(["let &tags = &tags . \",\" . project_dir . \"" . g:local_tag_filename . "\""], s:cwd . g:lvimrc_filename, 'a')
-	
-	" add global tag files to tags in lvimrc
-	call writefile(GenerateIncludes(), s:cwd . g:lvimrc_filename, 'a')
+  " add global tag files to tags in lvimrc
+  call writefile(GenerateIncludes(), lvimrc, 'a')
 
-	echo "EzPz: DONE!"
+  call lvimrcmanager.WriteFile()
+
+  echo "EzPz: DONE!"
 endfunction
 
 function! GenerateIncludes()
 
-	" put include paths to table for efficient looping when parsing
-	let s:include_table = split(g:include_paths, ",")
+  " put include paths to table for efficient looping when parsing
+  let s:include_table = split(g:include_paths, ",")
 
-	" do we have tags folder under .vim?
-	if ! isdirectory(fnamemodify(g:tag_directory, ":p"))
-		echo g:tag_directory . " not found. Creating one...\n"
-		call mkdir(fnamemodify(g:tag_directory, ":p"))
-	endif
+  " do we have tags folder under .vim?
+  if ! isdirectory(fnamemodify(g:tag_directory, ":p"))
+    echo g:tag_directory . " not found. Creating one...\n"
+    call mkdir(fnamemodify(g:tag_directory, ":p"))
+  endif
 
-	" initialize file manager
-	" TODO: proper file filter. automatic detection? first need to extend pattern table though
-	let file_mngr = s:FileMngr.New(s:file_patterns["c"])
-	call file_mngr.gen_file_tree(s:cwd)
-	" at this point file_mngr.files list has all the files in the cwd recursively
-	
+  " initialize file manager
+  " TODO: proper file filter. automatic detection? first need to extend pattern table though
+  let file_mngr = s:FileMngr.New(s:file_patterns["c"])
+  call file_mngr.gen_file_tree(s:cwd)
+  " at this point file_mngr.files list has all the files in the cwd recursively
 
-	" now lets put the Parser to work
-	let parser = s:Parser.New(s:search_patterns["c"])
-	for file in file_mngr.files
-		call parser.parse(file)
-	endfor
 
-	" we have the all the included libs in generator.libs now
-	let generator = s:Generator.New(s:crop_patterns["c"])
-	for line in parser.matches
-		call generator.parse(line)
-	endfor
+  " now lets put the Parser to work
+  let parser = s:Parser.New(s:search_patterns["c"])
+  for file in file_mngr.files
+    call parser.parse(file)
+  endfor
 
-	return generator.lib_tags
+  " we have the all the included libs in generator.libs now
+  let generator = s:Generator.New(s:crop_patterns["c"])
+  for line in parser.matches[0]
+    call generator.parse(line)
+  endfor
+
+  return generator.lib_tags
 endfunction
 "=================================================
 " Function: generate the tag files from lib headers
 " Args: path - path to the library
 function! s:Generate_tags(lib_path, tag_path)
-	let s:cmd = "ctags -f ". fnamemodify(a:tag_path, ":p") ." -R --c++-kinds=+p --fields=+iaS --extra=+q " . fnamemodify(a:lib_path, ":p")
-	echo s:cmd
-	echo system(s:cmd)
+  let s:cmd = "ctags -f ". fnamemodify(a:tag_path, ":p") ." -R --c++-kinds=+p --fields=+iaS --extra=+q " . fnamemodify(a:lib_path, ":p")
+  echo s:cmd
+  echo system(s:cmd)
 endfunction
 
 "===============================================================================
@@ -220,38 +223,103 @@ let s:FileMngr = {}
 " Constructor:
 " Args:	filter - file extension filter
 function! s:FileMngr.New(filter)
-	let newFileMngr = copy(self)
-	let newFileMngr.files = []
-	let newFileMngr.filter = a:filter
-	return newFileMngr
+  let newFileMngr = copy(self)
+  let newFileMngr.files = []
+  let newFileMngr.filter = a:filter
+  return newFileMngr
 endfunction
 
 "=================================================
 " Function: Generates a file tree
 " Args:	path - the root folder
 function! s:FileMngr.gen_file_tree(path)
-	" get directory files
-	let s:files = self.get_folder_files(a:path)
-	for file in s:files
-		if isdirectory(file)
-			" if we find a directory, call this function recursively
-			call self.gen_file_tree(file)
-		elseif match(file, self.filter) != -1
-			" otherwise, just put it among other files in the list
-			call add(self.files, file)
-		endif
-	endfor
+  " get directory files
+  let s:files = self.get_folder_files(a:path)
+  for file in s:files
+    if isdirectory(file)
+      " if we find a directory, call this function recursively
+      call self.gen_file_tree(file)
+    elseif match(file, self.filter) != -1
+      " otherwise, just put it among other files in the list
+      call add(self.files, file)
+    endif
+  endfor
 endfunction
 
 "=================================================
 " Function: Gets the file list of the folder
 " Args:	folder - folder to read from
 function! s:FileMngr.get_folder_files(folder)
-	return split(globpath(a:folder, "*"), "\n")
+  return split(globpath(a:folder, "*"), "\n")
 endfunction
 "===============================================================================
 " END OF CLASS: FileMngr
 "===============================================================================
+
+"===============================================================================
+" CLASS: LvimrcManager - Manages read and write to lvimrc
+"===============================================================================
+let s:LvimrcManager = {}
+insertline 
+"=================================================
+" Constructor:
+" Args: file - the lvimrc file
+function! s:LvimrcManager.New(file)
+  let newLvimrcManager = copy(self)
+  let newLvimrcManager.file = a:file
+  if !empty(glob(newLvimrcManager.file))
+    if !filereadable(newLvimrcManager.file) || !filewritable(newLvimrcManager.file)
+      echoerr "LvimrcManager: Insufficient permissions for file ".(newLvimrcManager.file)
+"      echoerr "Can't overwrite existing " . g:lvimrc_filename . ". "
+"      echoerr "Check your permissions.\r"
+      return
+    else
+      let newLvimrcManager.sectionlines = []
+      let newLvimrcManager.lines = readfile(a:file)
+      let newLvimrcManager.parser = s:Parser.New(s:lvimrc_pattern)
+      call newLvimrcManager.parser.parse(newLvimrcManager.lines)
+
+      if len(newLvimrcManager.parser.matches) == 0
+	let newLvimrcManager.linesbeforesection = newLvimrcManager.lines
+	let newLvimrcManager.linesaftersection = []
+      elseif len(newLvimrcManager.parser.matches) == 2
+	if newLvimrcManager.parser.matches[0][1] == 0 && newLvimrcManager.parser.matches[1][1] == len(newLvimrcManager.lines) - 1
+	  let newLvimrcManager.linesbeforesection = []
+	  let newLvimrcManager.linesaftersection = []
+	elseif newLvimrcManager.parser.matches[0][1] == 0
+	  let newLvimrcManager.linesbeforesection = []
+	  let newLvimrcManager.linesaftersection = newLvimrcManager.lines[newLvimrcManager.parser.matches[1][1] + 1:len(newLvimrcManager.lines) - 1]
+	elseif newLvimrcManager.parser.matches[1][1] == len(newLvimrcManager.lines) - 1
+	  let newLvimrcManager.linesbeforesection = newLvimrcManager.lines[0:newLvimrcManager.parser.matches[0][1] - 1]
+	  let newLvimrcManager.linesaftersection = []
+	else
+	  let newLvimrcManager.linesbeforesection = newLvimrcManager.lines[0:newLvimrcManager.parser.matches[0][1] - 1]
+	  let newLvimrcManager.linesaftersection = newLvimrcManager.lines[newLvimrcManager.parser.matches[1][1] + 1:len(newLvimrcManager.lines) - 1]
+	endif
+      else
+	echoerr "Error parsing " . g:lvimrc_filename . ". "
+      endif
+    endif
+  else
+    let newLvimrcManager.writeindex = 0
+    let newLvimrcManager.lines = []
+  endif
+  return newLvimrcManager
+endfunction
+
+"=================================================
+" Function: write file
+" Args: none
+function! s:LvimrcManager.WriteFile()
+  call writefile(self.lines, self.file)
+endfunction
+
+"=================================================
+" Function: add lines to section
+" Args: list of lines to add
+function! s:LvimrcManager.AddLines(lines)
+  self.sectionlines = self.sectionlines + a:lines
+endfunction
 
 
 "===============================================================================
@@ -263,23 +331,26 @@ let s:Parser = {}
 " Constructor: 
 " Args:	pattern	- include pattern in file
 function! s:Parser.New(pattern)
-	let newParser = copy(self)
-	let newParser.pattern = a:pattern
-	let newParser.matches = []	" parse results - matched lines
-	return newParser
+  let newParser = copy(self)
+  let newParser.pattern = a:pattern
+  let newParser.matches = []	" parse results - matched lines
+  return newParser
 endfunction
 
 "=================================================
 " Function: start parse the files
 " Args: file - path to the file parse
-function! s:Parser.parse(file)
-	let s:lines = readfile(a:file)
-	for line in s:lines
-		if match(line, self.pattern) != -1
-			call add(self.matches, line)
-		endif
-	endfor
+function! s:Parser.parse(lines)
+  let s:number = -1
+"  let s:lines = readfile(a:file)
+  for line in a:lines
+    s:number = match(line,self.pattern)
+    if s:number != -1
+      call add(self.matches, [line,number])
+    endif
+  endfor
 endfunction
+
 "===============================================================================
 " END OF CLASS: Parser
 "===============================================================================
@@ -294,77 +365,77 @@ let s:Generator = {}
 " Constructor: 
 " Args:	pattern	- a pattern to crop the lib names with
 function! s:Generator.New(pattern)
-	let newGenerator = copy(self)
-	let newGenerator.pattern = a:pattern
-	let newGenerator.lib_names = []
-	let newGenerator.lib_tags = []
-	let newGenerator.ignore_tags = [] " this is where 'N' answers go to ignore same questions
-	return newGenerator
+  let newGenerator = copy(self)
+  let newGenerator.pattern = a:pattern
+  let newGenerator.lib_names = []
+  let newGenerator.lib_tags = []
+  let newGenerator.ignore_tags = [] " this is where 'N' answers go to ignore same questions
+  return newGenerator
 endfunction
 
 "=================================================
 " Function: parse the include to crop the lib name
 " Args: line - include line
 function! s:Generator.parse(line)
-	" here we get lib path inside include dirs
-	let s:include = substitute(a:line, self.pattern, '\1', "")
-	" and the actual lib name only
-	let s:lib = substitute(s:include, '^\(\w\+\).*', '\1', "")
-	" check if it's not already included or ignored in order not to prompt for the same lib
-	if index(self.lib_names, s:lib) != -1 || index(self.ignore_tags, s:lib) != -1
-		return
+  " here we get lib path inside include dirs
+  let s:include = substitute(a:line, self.pattern, '\1', "")
+  " and the actual lib name only
+  let s:lib = substitute(s:include, '^\(\w\+\).*', '\1', "")
+  " check if it's not already included or ignored in order not to prompt for the same lib
+  if index(self.lib_names, s:lib) != -1 || index(self.ignore_tags, s:lib) != -1
+    return
+  endif
+
+  " path to the tag file
+  let s:lib_tag = g:tag_directory . s:lib . g:tag_extension
+  " do we have it?
+  if ! filereadable(fnamemodify(s:lib_tag, ":p"))
+    if g:prompt_create_tags == 2
+      return
+    endif
+
+    " lets check do we have installed packages
+    let s:lib_exist = 0
+    " depending on if file is directory or regular file
+    if match(s:include, "/") > 0
+      for dir in s:include_table
+	if isdirectory(fnamemodify(dir . s:lib, ":p"))
+	  let s:lib_exist = 1
+	  let s:actual_lib_path = dir . s:lib
 	endif
-
-	" path to the tag file
-	let s:lib_tag = g:tag_directory . s:lib . g:tag_extension
-	" do we have it?
-	if ! filereadable(fnamemodify(s:lib_tag, ":p"))
-		if g:prompt_create_tags == 2
-			return
-		endif
-
-		" lets check do we have installed packages
-		let s:lib_exist = 0
-		" depending on if file is directory or regular file
-		if match(s:include, "/") > 0
-			for dir in s:include_table
-				if isdirectory(fnamemodify(dir . s:lib, ":p"))
-					let s:lib_exist = 1
-					let s:actual_lib_path = dir . s:lib
-				endif
-			endfor
-		else
-			for dir in s:include_table
-				if filereadable(fnamemodify(dir . s:include, ":p"))
-					let s:lib_exist = 1
-					let s:actual_lib_path = dir . s:include
-				endif
-			endfor
-		endif
-
-		" package exist. generate tags?
-		if s:lib_exist == 1
-			if self.prompt_create_tag(s:lib_tag, s:actual_lib_path) == 1
-				call s:Generate_tags(s:actual_lib_path, s:lib_tag)
-			else
-				return
-			endif
-		" otherwise let the user give the path to the library
-		else
-			let s:answer = self.prompt_lib_path(s:lib)
-			if ! empty(s:answer)
-				call s:Generate_tags(s:answer, s:lib_tag)
-			else
-				call add(self.ignore_tags, s:lib)
-				return
-			endif
-		endif
+      endfor
+    else
+      for dir in s:include_table
+	if filereadable(fnamemodify(dir . s:include, ":p"))
+	  let s:lib_exist = 1
+	  let s:actual_lib_path = dir . s:include
 	endif
+      endfor
+    endif
 
-	" save the lib name
-	call add(self.lib_names, s:lib)
-	" and this is what we will put into the .lvimrc
-	call add(self.lib_tags, "set tags+=" . s:lib_tag)
+    " package exist. generate tags?
+    if s:lib_exist == 1
+      if self.prompt_create_tag(s:lib_tag, s:actual_lib_path) == 1
+	call s:Generate_tags(s:actual_lib_path, s:lib_tag)
+      else
+	return
+      endif
+      " otherwise let the user give the path to the library
+    else
+      let s:answer = self.prompt_lib_path(s:lib)
+      if ! empty(s:answer)
+	call s:Generate_tags(s:answer, s:lib_tag)
+      else
+	call add(self.ignore_tags, s:lib)
+	return
+      endif
+    endif
+  endif
+
+  " save the lib name
+  call add(self.lib_names, s:lib)
+  " and this is what we will put into the .lvimrc
+  call add(self.lib_tags, "setlocal tags+=" . s:lib_tag)
 endfunction
 
 "=================================================
@@ -374,31 +445,31 @@ endfunction
 " Return: 0 - don't generate tags
 " 		  1 - generate tags
 function! s:Generator.prompt_create_tag(lib_tag, lib_path)
-	" if prompt is enabled - ask the user
-	if g:prompt_create_tags == 0
-		let s:prompt = "[" . a:lib_tag . "] does not exist, but found library headers under [" . a:lib_path . "]. "
-		let s:input = input(s:prompt . "Generate the tags? [y/Y/n/N]: ", "y")
-		" if the input is for '-to all', edit globals, otherwise just return the action
-		if s:input =~# "Y"
-			let g:prompt_create_tags = 1
-			return 1
-		elseif s:input =~# "y"
-			return 1
-		elseif s:input =~# "N"
-			let g:prompt_create_tags = 2
-			return 0
-		elseif s:input =~# "n"
-			return 0
-		endif
-	" global is set to 'generate -to all'
-	elseif g:prompt_create_tags == 1
-		return 1
-	" global is set to 'skip -to all'
-	elseif g:prompt_create_tags == 2
-		return 0
-	endif
+  " if prompt is enabled - ask the user
+  if g:prompt_create_tags == 0
+    let s:prompt = "[" . a:lib_tag . "] does not exist, but found library headers under [" . a:lib_path . "]. "
+    let s:input = input(s:prompt . "Generate the tags? [y/Y/n/N]: ", "y")
+    " if the input is for '-to all', edit globals, otherwise just return the action
+    if s:input =~# "Y"
+      let g:prompt_create_tags = 1
+      return 1
+    elseif s:input =~# "y"
+      return 1
+    elseif s:input =~# "N"
+      let g:prompt_create_tags = 2
+      return 0
+    elseif s:input =~# "n"
+      return 0
+    endif
+    " global is set to 'generate -to all'
+  elseif g:prompt_create_tags == 1
+    return 1
+    " global is set to 'skip -to all'
+  elseif g:prompt_create_tags == 2
+    return 0
+  endif
 
-	return 0
+  return 0
 endfunction
 
 "=================================================
@@ -407,13 +478,13 @@ endfunction
 " Return: path	- location to the library
 " 		  0		- null, skip this library
 function! s:Generator.prompt_lib_path(lib_name)
-	let s:prompt = "[" . a:lib_name . "] does not exist and NO library headers could be found. "
-	let s:input = input(s:prompt . "Press enter to skip it or enter the path to the library: ", "", "file")
-	if strlen(s:input) > 0
-		return s:input
-	else
-		return 0
-	endif
+  let s:prompt = "[" . a:lib_name . "] does not exist and NO library headers could be found. "
+  let s:input = input(s:prompt . "Press enter to skip it or enter the path to the library: ", "", "file")
+  if strlen(s:input) > 0
+    return s:input
+  else
+    return 0
+  endif
 endfunction
 
 "===============================================================================
