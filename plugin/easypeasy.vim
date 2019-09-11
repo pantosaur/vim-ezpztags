@@ -136,7 +136,7 @@ let s:search_patterns =	{ "c" : '\s*#include\s*<' }
 let s:crop_patterns =	{ "c" : '.*<\(.*\)>.*' }
 
 let s:lvimrc_section_header = { "header" : "\" Section: EzPz", "comment" : "\" **Auto-generated. Do not change or delete section header.", "footer" : "\" End: EzPz"}
-let s:lvimrc_pattern = "^\"\s\+.*:\s\+EzPz$"
+let s:lvimrc_pattern = '^\"\s\+.*:\s\+EzPz$'
 
 "     example:     EzPz
 
@@ -153,7 +153,7 @@ function! EzPz()
   let s:cwd = getcwd() . "/"
   let lvimrc = s:cwd . g:lvimrc_filename
   " remove the .lvimrc file if it exists in cwd
-  let lvimrcmanager = call s:LvimrcManager.New(lvimrc)
+  let lvimrcmanager = s:LvimrcManager.New(lvimrc)
 
   call lvimrcmanager.AddLines([s:lvimrc_section_header["header"], s:lvimrc_section_header["comment"]])
   call lvimrcmanager.AddLines(["let project_dir=\"" . s:cwd . "\"", ""])
@@ -162,11 +162,12 @@ function! EzPz()
   call s:Generate_tags(s:cwd, s:cwd . g:local_tag_filename)
 
   " add local tag file to tags in lvimrc
-  call writefile(["let &tags = &tags . \",\" . project_dir . \"" . g:local_tag_filename . "\""], lvimrc, 'a')
   call lvimrcmanager.AddLines(["let &tags = &tags . \",\" . project_dir . \"" . g:local_tag_filename . "\""])
 
   " add global tag files to tags in lvimrc
-  call writefile(GenerateIncludes(), lvimrc, 'a')
+  call lvimrcmanager.AddLines(GenerateIncludes())
+
+  call lvimrcmanager.AddLines([s:lvimrc_section_header["footer"]])
 
   call lvimrcmanager.WriteFile()
 
@@ -194,13 +195,13 @@ function! GenerateIncludes()
   " now lets put the Parser to work
   let parser = s:Parser.New(s:search_patterns["c"])
   for file in file_mngr.files
-    call parser.parse(file)
+    call parser.parse(readfile(file))
   endfor
 
   " we have the all the included libs in generator.libs now
   let generator = s:Generator.New(s:crop_patterns["c"])
-  for line in parser.matches[0]
-    call generator.parse(line)
+  for each in parser.matches
+    call generator.parse(each)
   endfor
 
   return generator.lib_tags
@@ -260,47 +261,55 @@ endfunction
 " CLASS: LvimrcManager - Manages read and write to lvimrc
 "===============================================================================
 let s:LvimrcManager = {}
-insertline 
 "=================================================
 " Constructor:
 " Args: file - the lvimrc file
 function! s:LvimrcManager.New(file)
   let newLvimrcManager = copy(self)
   let newLvimrcManager.file = a:file
+  let newLvimrcManager.sectionlines = []
+  let newLvimrcManager.linesbeforesection = []
+  let newLvimrcManager.linesaftersection = []
   if !empty(glob(newLvimrcManager.file))
     if !filereadable(newLvimrcManager.file) || !filewritable(newLvimrcManager.file)
-      echoerr "LvimrcManager: Insufficient permissions for file ".(newLvimrcManager.file)
+      echoerr "LvimrcManager: Insufficient permissions for file ".newLvimrcManager.file
 "      echoerr "Can't overwrite existing " . g:lvimrc_filename . ". "
 "      echoerr "Check your permissions.\r"
       return
     else
-      let newLvimrcManager.sectionlines = []
       let newLvimrcManager.lines = readfile(a:file)
       let newLvimrcManager.parser = s:Parser.New(s:lvimrc_pattern)
       call newLvimrcManager.parser.parse(newLvimrcManager.lines)
-
       if len(newLvimrcManager.parser.matches) == 0
+	echo "0"
 	let newLvimrcManager.linesbeforesection = newLvimrcManager.lines
 	let newLvimrcManager.linesaftersection = []
       elseif len(newLvimrcManager.parser.matches) == 2
+	echo "2"
 	if newLvimrcManager.parser.matches[0][1] == 0 && newLvimrcManager.parser.matches[1][1] == len(newLvimrcManager.lines) - 1
+	  echo "2.1"
 	  let newLvimrcManager.linesbeforesection = []
 	  let newLvimrcManager.linesaftersection = []
 	elseif newLvimrcManager.parser.matches[0][1] == 0
+	  echo "2.2"
+	  echo newLvimrcManager.parser.matches
 	  let newLvimrcManager.linesbeforesection = []
 	  let newLvimrcManager.linesaftersection = newLvimrcManager.lines[newLvimrcManager.parser.matches[1][1] + 1:len(newLvimrcManager.lines) - 1]
 	elseif newLvimrcManager.parser.matches[1][1] == len(newLvimrcManager.lines) - 1
+	  echo "2.3"
 	  let newLvimrcManager.linesbeforesection = newLvimrcManager.lines[0:newLvimrcManager.parser.matches[0][1] - 1]
 	  let newLvimrcManager.linesaftersection = []
 	else
+	  echo "2.4"
 	  let newLvimrcManager.linesbeforesection = newLvimrcManager.lines[0:newLvimrcManager.parser.matches[0][1] - 1]
 	  let newLvimrcManager.linesaftersection = newLvimrcManager.lines[newLvimrcManager.parser.matches[1][1] + 1:len(newLvimrcManager.lines) - 1]
 	endif
       else
-	echoerr "Error parsing " . g:lvimrc_filename . ". "
+	echo "Error parsing " . g:lvimrc_filename . ". "
       endif
     endif
   else
+    echo g:lvimrc_filename." does not exist. Creating a new one..."
     let newLvimrcManager.writeindex = 0
     let newLvimrcManager.lines = []
   endif
@@ -308,17 +317,23 @@ function! s:LvimrcManager.New(file)
 endfunction
 
 "=================================================
+" Function: parse lvimrc file
+" Args: none
+function! s:LvimrcManager.ParseFile()
+endfunction
+
+"=================================================
 " Function: write file
 " Args: none
 function! s:LvimrcManager.WriteFile()
-  call writefile(self.lines, self.file)
+  call writefile(self.linesbeforesection + self.sectionlines + self.linesaftersection, self.file)
 endfunction
 
 "=================================================
 " Function: add lines to section
 " Args: list of lines to add
 function! s:LvimrcManager.AddLines(lines)
-  self.sectionlines = self.sectionlines + a:lines
+  let self.sectionlines = self.sectionlines + a:lines
 endfunction
 
 
@@ -341,13 +356,12 @@ endfunction
 " Function: start parse the files
 " Args: file - path to the file parse
 function! s:Parser.parse(lines)
-  let s:number = -1
-"  let s:lines = readfile(a:file)
+  let index = 0
   for line in a:lines
-    s:number = match(line,self.pattern)
-    if s:number != -1
-      call add(self.matches, [line,number])
+    if match(line,self.pattern) != -1
+      call add(self.matches, [line, index])
     endif
+    let index += 1
   endfor
 endfunction
 
@@ -376,9 +390,9 @@ endfunction
 "=================================================
 " Function: parse the include to crop the lib name
 " Args: line - include line
-function! s:Generator.parse(line)
+function! s:Generator.parse(match)
   " here we get lib path inside include dirs
-  let s:include = substitute(a:line, self.pattern, '\1', "")
+  let s:include = substitute(a:match[0], self.pattern, '\1', "")
   " and the actual lib name only
   let s:lib = substitute(s:include, '^\(\w\+\).*', '\1', "")
   " check if it's not already included or ignored in order not to prompt for the same lib
