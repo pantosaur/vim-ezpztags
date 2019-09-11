@@ -1,4 +1,4 @@
-# EZPZtags
+# vim-ezpztags
 This plugin aims at being a complete tag management plugin for vim. So far only C is supported.
 
 Features:
