@@ -131,7 +131,8 @@ let g:prompt_create_tags = 0
 " LOCALS
 "===============================================================================
 " pattern tables
-let s:file_patterns =	{ "c" : '.c$' }
+" TODO option to add only .h that are in the include chain from c files
+let s:file_patterns =	{ "c" : '.[ch]$' }
 let s:search_patterns =	{ "c" : '\s*#include\s*<' }
 let s:crop_patterns =	{ "c" : '.*<\(.*\)>.*' }
 
@@ -151,10 +152,10 @@ let s:include_table = []
 function! EzPz()
   " get new cwd when command is run
   let s:cwd = getcwd() . "/"
-  let lvimrc = s:cwd . g:lvimrc_filename
-  " remove the .lvimrc file if it exists in cwd
-  let lvimrcmanager = s:LvimrcManager.New(lvimrc)
 
+  " create lvimrc object with existing or new lvimrc file
+  let lvimrc = s:cwd . g:lvimrc_filename
+  let lvimrcmanager = s:LvimrcManager.New(lvimrc)
   call lvimrcmanager.AddLines([s:lvimrc_section_header["header"], s:lvimrc_section_header["comment"]])
   call lvimrcmanager.AddLines(["let project_dir=\"" . s:cwd . "\"", ""])
 
@@ -281,26 +282,20 @@ function! s:LvimrcManager.New(file)
       let newLvimrcManager.parser = s:Parser.New(s:lvimrc_pattern)
       call newLvimrcManager.parser.parse(newLvimrcManager.lines)
       if len(newLvimrcManager.parser.matches) == 0
-	echo "0"
 	let newLvimrcManager.linesbeforesection = newLvimrcManager.lines
 	let newLvimrcManager.linesaftersection = []
       elseif len(newLvimrcManager.parser.matches) == 2
-	echo "2"
 	if newLvimrcManager.parser.matches[0][1] == 0 && newLvimrcManager.parser.matches[1][1] == len(newLvimrcManager.lines) - 1
-	  echo "2.1"
 	  let newLvimrcManager.linesbeforesection = []
 	  let newLvimrcManager.linesaftersection = []
 	elseif newLvimrcManager.parser.matches[0][1] == 0
-	  echo "2.2"
 	  echo newLvimrcManager.parser.matches
 	  let newLvimrcManager.linesbeforesection = []
 	  let newLvimrcManager.linesaftersection = newLvimrcManager.lines[newLvimrcManager.parser.matches[1][1] + 1:len(newLvimrcManager.lines) - 1]
 	elseif newLvimrcManager.parser.matches[1][1] == len(newLvimrcManager.lines) - 1
-	  echo "2.3"
 	  let newLvimrcManager.linesbeforesection = newLvimrcManager.lines[0:newLvimrcManager.parser.matches[0][1] - 1]
 	  let newLvimrcManager.linesaftersection = []
 	else
-	  echo "2.4"
 	  let newLvimrcManager.linesbeforesection = newLvimrcManager.lines[0:newLvimrcManager.parser.matches[0][1] - 1]
 	  let newLvimrcManager.linesaftersection = newLvimrcManager.lines[newLvimrcManager.parser.matches[1][1] + 1:len(newLvimrcManager.lines) - 1]
 	endif
